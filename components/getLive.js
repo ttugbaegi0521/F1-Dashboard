@@ -5,35 +5,33 @@ import { inflate } from 'fflate';
 import TrackMap from './trackMap';
 
 function decodeData(encodedStr) {
-    try {
-        // Base64 decode
-        const decodedBase64 = atob(encodedStr);
-        const binaryData = new Uint8Array(decodedBase64.length);
-        for (let i = 0; i < decodedBase64.length; i++) {
-            binaryData[i] = decodedBase64.charCodeAt(i);
-        }
-
-        // Decompress using fflate
-        inflate(binaryData, (err, decompressedData) => {
-            if (err) {
-                console.error('Decompression error:', err);
-            } else {
-                const decompressedStr = new TextDecoder().decode(decompressedData);
-                console.log('Decompressed data:', decompressedStr);
-
-                try {
-                    const jsonData = JSON.parse(decompressedStr);
-                    console.log('Parsed JSON data:', jsonData.Entries[0]);
-                    return jsonData; // Ensure this value is returned properly
-                } catch (jsonErr) {
-                    console.error('JSON parsing error:', jsonErr);
-                }
+    return new Promise((resolve, reject) => {
+        try {
+            // Base64 decode
+            const decodedBase64 = atob(encodedStr);
+            const binaryData = new Uint8Array(decodedBase64.length);
+            for (let i = 0; i < decodedBase64.length; i++) {
+                binaryData[i] = decodedBase64.charCodeAt(i);
             }
-        });
-    } catch (err) {
-        console.error('Decompression or parsing error:', err);
-    }
+
+            // Decompress using fflate
+            inflate(binaryData, (err, decompressedData) => {
+                if (err) {
+                    console.error('Decompression error:', err);
+                    reject(err);
+                } else {
+                    const decompressedStr = new TextDecoder().decode(decompressedData);
+                    // console.log('Decompressed data:', decompressedStr);
+                    resolve(decompressedStr); // Resolve the decompressed data
+                }
+            });
+        } catch (err) {
+            console.error('Decompression or parsing error:', err);
+            reject(err);
+        }
+    });
 }
+
 
 async function connectwss(token, setLiveData) {
     const hub = encodeURIComponent(JSON.stringify([{ name: "Streaming" }]));
@@ -50,18 +48,18 @@ async function connectwss(token, setLiveData) {
             }, 1000);
         };
 
-        sock.onmessage = (event) => {
+        sock.onmessage = async (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('Received Data:', data);
+                // console.log('Received Data:', data);
 
                 // Handle CarData.z
                 if (data.R && data.R["CarData.z"]) {
-                    console.log('CarData.z:', data.R["CarData.z"]);
+                    // console.log('CarData.z:', data.R["CarData.z"]);
                     try {
-                        const decodedCarData = decodeData(data.R["CarData.z"]);
+                        const decodedCarData = await decodeData(data.R["CarData.z"]);
+                        // console.log('Decoded CarData:', decodedCarData);
                         data.R.CarData_decoded = decodedCarData;
-                        console.log('Decoded CarData:', decodedCarData);
                     } catch (decodeErr) {
                         console.error('Error decoding CarData.z:', decodeErr);
                     }
@@ -69,11 +67,11 @@ async function connectwss(token, setLiveData) {
 
                 // Handle Position.z
                 if (data.R && data.R["Position.z"]) {
-                    console.log('Position.z:', data.R["Position.z"]);
+                    // console.log('Position.z:', data.R["Position.z"]);
                     try {
-                        const decodedPositionData = decodeData(data.R["Position.z"]);
+                        const decodedPositionData = await decodeData(data.R["Position.z"]);
                         data.R.Position_decoded = decodedPositionData;
-                        console.log('Decoded Position Data:', decodedPositionData);
+                        // console.log('Decoded Position Data:', decodedPositionData);
                     } catch (decodeErr) {
                         console.error('Error decoding Position.z:', decodeErr);
                     }
@@ -129,22 +127,23 @@ export default function GetLive() {
         if (liveData.length > 0) {
             const latestData = liveData[liveData.length - 1];
             console.log('Latest Data:', latestData);
-            if (latestData.R && latestData["R.Position_decoded"]) {
-                const positions = latestData["R.Position_decoded"].Position[0]?.Entries || {};
-                const mappedPositions = Object.keys(positions).map((key) => {
-                    return {
-                        number: key,
-                        ...positions[key],
-                    };
-                });
-                console.log('Mapped Positions:', mappedPositions);
-                setCarPositions(mappedPositions);
+            if (latestData.R && latestData.R.Position_decoded) {
+                console.log('Position Data:', latestData.R.Position_decoded.Position);
+                // const parseData = JSON.parse(latestData.R.Position_decoded.Position);
+                // const positions = parseData[parseData.length - 1].Entries;
+                // const timeStamps = parseData[parseData.length - 1].Timestamp;
+
+                // const carData = positions.map((p, i) => {
+                //     console.log('Car Data:', p + ' ' + timeStamps[i]);
+                //     const [x, y] = p;
+                //     return { x, y, time: timeStamps[i] };
+                // });
             }
         }
     }, [liveData]);
 
     return (
-        <div className="">
+        <div style={{ color: 'white' }}>
             <h1>Live Data</h1>
             <TrackMap carPositions={carPositions} />
             <div style={{ overflow: 'auto', height: '500px', width: "70%" }}>
